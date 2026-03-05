@@ -1,4 +1,4 @@
-import { LayoutDashboard, Building2, Landmark, ArrowLeftRight, Receipt, FileText, ShieldCheck, ChevronDown, Filter, Search, Mail } from 'lucide-react';
+import { LayoutDashboard, Building2, Landmark, ArrowLeftRight, Receipt, FileText, ShieldCheck, ChevronDown, ChevronLeft, ChevronRight, Filter, Search, Mail } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { usePortfolioStore } from '../../store/portfolioStore';
 import type { Page } from '../../types';
@@ -16,14 +16,59 @@ const navItems: { page: Page; label: string; icon: typeof LayoutDashboard }[] = 
 ];
 
 export function Sidebar() {
-  const { activePage, setActivePage, activeEntityId, setActiveEntity } = useUIStore();
+  const { activePage, setActivePage, activeEntityId, setActiveEntity, sidebarCollapsed, toggleSidebar } = useUIStore();
   const entities = usePortfolioStore((s) => s.entities);
 
+  if (sidebarCollapsed) {
+    return (
+      <aside className="w-14 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 shrink-0">
+        <div className="p-2 border-b border-gray-200 flex justify-center">
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+            title="Expand sidebar"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-1.5 py-3 space-y-0.5">
+          {navItems.map(({ page, label, icon: Icon }) => {
+            const isActive = activePage === page || (page === 'properties' && activePage === 'property-detail');
+            return (
+              <button
+                key={page}
+                onClick={() => setActivePage(page)}
+                title={label}
+                className={`w-full flex items-center justify-center p-2.5 rounded-lg transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <Icon size={18} />
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
-      <div className="p-5 border-b border-gray-200">
-        <h1 className="text-lg font-bold text-gray-900">Property Portfolio</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Financial Dashboard</p>
+    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 shrink-0">
+      <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">Property Portfolio</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Financial Dashboard</p>
+        </div>
+        <button
+          onClick={toggleSidebar}
+          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+          title="Collapse sidebar"
+        >
+          <ChevronLeft size={16} />
+        </button>
       </div>
 
       {/* Entity Filter */}

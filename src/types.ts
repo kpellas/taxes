@@ -6,7 +6,7 @@ export type DocumentStatus = 'provided' | 'missing' | 'partial';
 export type Priority = 'high' | 'medium' | 'low';
 
 // Source tracking - every piece of data must declare where it came from
-export type DataConfidence = 'verified' | 'from_transcript' | 'assumed' | 'user_provided';
+export type DataConfidence = 'verified' | 'rejected' | 'from_transcript' | 'assumed' | 'user_provided';
 
 export interface SourceInfo {
   confidence: DataConfidence;
@@ -95,6 +95,7 @@ export interface Loan {
   refinancedToId?: string;
   needsConfirmation?: boolean;
   notes?: string;
+  reviewComment?: string;
   sourceInfo: SourceInfo;
 }
 

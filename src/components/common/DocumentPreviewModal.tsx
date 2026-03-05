@@ -1,25 +1,58 @@
-import { X, Download, FileText } from 'lucide-react';
-import { useEffect } from 'react';
+import { X, Download, FileText, Pencil, Check } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 interface DocumentPreviewModalProps {
   url: string;
   filename: string;
+  relativePath?: string;
   onClose: () => void;
+  onRenamed?: (newFilename: string, newRelativePath: string) => void;
 }
 
-export function DocumentPreviewModal({ url, filename, onClose }: DocumentPreviewModalProps) {
+export function DocumentPreviewModal({ url, filename, relativePath, onClose, onRenamed }: DocumentPreviewModalProps) {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const isPdf = ext === 'pdf';
   const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(filename);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      // Select just the name part, not the extension
+      const dotIdx = editName.lastIndexOf('.');
+      inputRef.current.setSelectionRange(0, dotIdx > 0 ? dotIdx : editName.length);
+    }
+  }, [editing]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !editing) onClose();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose]);
+  }, [onClose, editing]);
+
+  const handleRename = async () => {
+    if (!relativePath || !onRenamed || editName === filename) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const { api } = await import('../../api/client');
+      const result = await api.documents.rename(relativePath, editName);
+      onRenamed(result.newFilename, result.newRelativePath);
+      setEditing(false);
+    } catch (err: any) {
+      alert(err.message || 'Rename failed');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -33,9 +66,36 @@ export function DocumentPreviewModal({ url, filename, onClose }: DocumentPreview
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <FileText size={14} className="text-gray-400 shrink-0" />
-            <span className="text-sm font-medium text-gray-700 truncate">{filename}</span>
+            {editing ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRename();
+                  if (e.key === 'Escape') { setEditName(filename); setEditing(false); }
+                }}
+                onBlur={handleRename}
+                disabled={saving}
+                className="flex-1 text-sm font-medium text-gray-700 border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              <>
+                <span className="text-sm font-medium text-gray-700 truncate">{filename}</span>
+                {relativePath && onRenamed && (
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="p-0.5 text-gray-400 hover:text-gray-600 shrink-0"
+                    title="Rename file"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <a
@@ -60,7 +120,7 @@ export function DocumentPreviewModal({ url, filename, onClose }: DocumentPreview
           {isPdf && (
             <iframe
               src={url}
-              className="w-full h-[78vh] rounded"
+              className="w-full h-[78vh] rounded border-0"
               title={filename}
             />
           )}

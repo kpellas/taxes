@@ -7,6 +7,59 @@ import { formatCurrency } from '../../utils/format';
 import { EntityBadge } from '../common/EntityBadge';
 import type { Loan, Property, PurchaseItem as PurchaseItemType, PurchaseBreakdown } from '../../types';
 
+// ── Color Picker ──
+
+const BOX_COLORS = [
+  null,         // none / clear
+  '#fef3c7',   // amber-100
+  '#dbeafe',   // blue-100
+  '#dcfce7',   // green-100
+  '#fce7f3',   // pink-100
+  '#ede9fe',   // violet-100
+  '#ffedd5',   // orange-100
+  '#f0fdfa',   // teal-50
+  '#fef9c3',   // yellow-100
+  '#e0e7ff',   // indigo-100
+  '#ffe4e6',   // rose-100
+];
+
+function ColorPicker({ boxId, x, y, onClose }: { boxId: string; x: number; y: number; onClose: () => void }) {
+  const setBoxColor = useFlowchartStore((s) => s.setBoxColor);
+  const currentColor = useFlowchartStore((s) => s.boxColors[boxId]);
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-color-picker]')) onClose();
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [onClose]);
+
+  return (
+    <div
+      data-color-picker
+      className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex gap-1 flex-wrap"
+      style={{ left: x, top: y, width: 140 }}
+    >
+      {BOX_COLORS.map((color, i) => (
+        <button
+          key={i}
+          className={`w-6 h-6 rounded border ${
+            color === currentColor || (!color && !currentColor)
+              ? 'ring-2 ring-gray-900 ring-offset-1'
+              : 'border-gray-200 hover:border-gray-400'
+          }`}
+          style={{ backgroundColor: color ?? '#ffffff' }}
+          title={color ?? 'None'}
+          onClick={() => { setBoxColor(boxId, color); onClose(); }}
+        >
+          {!color && <span className="text-[9px] text-gray-400 leading-none">x</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Constants ──
 
 const PROPERTY_ORDER = ['chisholm', 'heddon-greta', 'bannerman', 'old-bar', 'lennox'];
@@ -138,6 +191,10 @@ function DraggableBox({
     if (target.closest('input, button, select, textarea')) return;
     if (e.altKey || drawingArrowFrom) return;
 
+    // Don't drag if event originated from a nested DraggableBox
+    const closestBox = target.closest('[data-box-id]');
+    if (closestBox && closestBox.getAttribute('data-box-id') !== boxId) return;
+
     startPos.current = { x: e.clientX, y: e.clientY };
     startStored.current = stored ?? { x: 0, y: 0 };
     moved.current = false;
@@ -250,16 +307,19 @@ function ArrowTarget({
 // ── Editable Loan Box ──
 
 function EditableLoanBox({
-  loan, ghost, purposeLabel, refiFromLabel,
+  loan, ghost, purposeLabel, refiFromLabel, colorBoxId,
 }: {
   loan: Loan;
   ghost?: boolean;
   purposeLabel?: string;
   refiFromLabel?: string;
+  colorBoxId: string;
 }) {
   const [editing, setEditing] = useState(false);
+  const [picker, setPicker] = useState<{ x: number; y: number } | null>(null);
   const updateLoan = usePortfolioStore((s) => s.updateLoan);
   const deleteLoan = usePortfolioStore((s) => s.deleteLoan);
+  const boxColor = useFlowchartStore((s) => s.boxColors[colorBoxId]);
   const isOffset = loan.type === 'offset';
   const prefix = LENDER_PREFIX[loan.lender] || loan.lender;
 
@@ -284,29 +344,36 @@ function EditableLoanBox({
   }
 
   return (
-    <div
-      className={`rounded border px-2.5 py-1.5 text-xs ${borderClass} cursor-pointer hover:border-gray-400`}
-      onClick={() => setEditing(true)}
-    >
-      {refiFromLabel && (
-        <p className="text-gray-400 mb-0.5 text-[10px]">&larr; refi from {refiFromLabel}</p>
-      )}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="font-mono text-gray-500">{prefix} {loan.accountNumber}</span>
-        <span className={ghost ? 'font-semibold text-gray-500' : 'font-semibold'}>
-          {formatCurrency(loan.currentBalance ?? loan.originalAmount)}
-        </span>
-        {!isOffset && (
-          <span className="text-gray-500">{loan.isInterestOnly ? 'IO' : 'P&I'}</span>
+    <div className="relative">
+      <div
+        className={`rounded border px-2.5 py-1.5 text-xs ${borderClass} cursor-pointer hover:border-gray-400`}
+        style={boxColor ? { backgroundColor: boxColor } : undefined}
+        onClick={() => setEditing(true)}
+        onContextMenu={(e) => { e.preventDefault(); setPicker({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY }); }}
+      >
+        {refiFromLabel && (
+          <p className="text-gray-400 mb-0.5 text-[10px]">&larr; refi from {refiFromLabel}</p>
         )}
-        {isOffset && <span className="text-gray-400">(offset)</span>}
-        {loan.interestRate && !isOffset && (
-          <span className="text-gray-400">{loan.interestRate}%</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-mono text-gray-500">{prefix} {loan.accountNumber}</span>
+          <span className={ghost ? 'font-semibold text-gray-500' : 'font-semibold'}>
+            {formatCurrency(loan.currentBalance ?? loan.originalAmount)}
+          </span>
+          {!isOffset && (
+            <span className="text-gray-500">{loan.isInterestOnly ? 'IO' : 'P&I'}</span>
+          )}
+          {isOffset && <span className="text-gray-400">(offset)</span>}
+          {loan.interestRate && !isOffset && (
+            <span className="text-gray-400">{loan.interestRate}%</span>
+          )}
+          {loan.needsConfirmation && <AlertTriangle size={11} className="text-red-600" />}
+        </div>
+        {purposeLabel && (
+          <p className="text-gray-400 mt-0.5 text-[10px]">{purposeLabel}</p>
         )}
-        {loan.needsConfirmation && <AlertTriangle size={11} className="text-red-600" />}
       </div>
-      {purposeLabel && (
-        <p className="text-gray-400 mt-0.5 text-[10px]">{purposeLabel}</p>
+      {picker && (
+        <ColorPicker boxId={colorBoxId} x={picker.x} y={picker.y} onClose={() => setPicker(null)} />
       )}
     </div>
   );
@@ -406,15 +473,18 @@ function LoanBoxEditor({
 // ── Editable Purchase Item ──
 
 function EditablePurchaseItem({
-  item, propertyId, itemIndex,
+  item, propertyId, itemIndex, colorBoxId,
 }: {
   item: PurchaseItemType;
   propertyId: string;
   itemIndex: number;
+  colorBoxId: string;
 }) {
   const [editing, setEditing] = useState(false);
+  const [picker, setPicker] = useState<{ x: number; y: number } | null>(null);
   const updatePurchaseItem = usePortfolioStore((s) => s.updatePurchaseItem);
   const deletePurchaseItem = usePortfolioStore((s) => s.deletePurchaseItem);
+  const boxColor = useFlowchartStore((s) => s.boxColors[colorBoxId]);
 
   if (editing) {
     return (
@@ -429,17 +499,24 @@ function EditablePurchaseItem({
 
   const isCash = item.type === 'cash';
   return (
-    <div
-      title={item.tooltip}
-      className={`rounded border px-2 py-1 text-xs cursor-pointer hover:border-gray-400 ${
-        isCash
-          ? 'border-green-300 bg-green-50 text-green-800'
-          : 'border-gray-300 bg-white text-gray-900'
-      }`}
-      onClick={() => setEditing(true)}
-    >
-      <div className={isCash ? 'text-green-600' : 'text-gray-500'}>{item.label}</div>
-      <div className="font-semibold">{formatCurrency(item.amount)}</div>
+    <div className="relative">
+      <div
+        title={item.tooltip}
+        className={`rounded border px-2 py-1 text-xs cursor-pointer hover:border-gray-400 ${
+          isCash
+            ? 'border-green-300 bg-green-50 text-green-800'
+            : 'border-gray-300 bg-white text-gray-900'
+        }`}
+        style={boxColor ? { backgroundColor: boxColor } : undefined}
+        onClick={() => setEditing(true)}
+        onContextMenu={(e) => { e.preventDefault(); setPicker({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY }); }}
+      >
+        <div className={isCash ? 'text-green-600' : 'text-gray-500'}>{item.label}</div>
+        <div className="font-semibold">{formatCurrency(item.amount)}</div>
+      </div>
+      {picker && (
+        <ColorPicker boxId={colorBoxId} x={picker.x} y={picker.y} onClose={() => setPicker(null)} />
+      )}
     </div>
   );
 }
@@ -503,14 +580,17 @@ function PurchaseItemEditor({
 // ── Editable Buffer ──
 
 function EditableBuffer({
-  buffer, propertyId,
+  buffer, propertyId, colorBoxId,
 }: {
   buffer: { label: string; amount: number; tooltip?: string };
   propertyId: string;
+  colorBoxId: string;
 }) {
   const [editing, setEditing] = useState(false);
+  const [picker, setPicker] = useState<{ x: number; y: number } | null>(null);
   const updatePurchaseBuffer = usePortfolioStore((s) => s.updatePurchaseBuffer);
   const updatePurchaseBreakdown = usePortfolioStore((s) => s.updatePurchaseBreakdown);
+  const boxColor = useFlowchartStore((s) => s.boxColors[colorBoxId]);
 
   if (editing) {
     return (
@@ -524,13 +604,20 @@ function EditableBuffer({
   }
 
   return (
-    <div
-      title={buffer.tooltip}
-      className="rounded border border-green-300 bg-green-50 px-2 py-1 text-xs text-green-800 cursor-pointer hover:border-green-400"
-      onClick={() => setEditing(true)}
-    >
-      <div className="text-green-600">{buffer.label}</div>
-      <div className="font-semibold">{formatCurrency(buffer.amount)}</div>
+    <div className="relative">
+      <div
+        title={buffer.tooltip}
+        className="rounded border border-green-300 bg-green-50 px-2 py-1 text-xs text-green-800 cursor-pointer hover:border-green-400"
+        style={boxColor ? { backgroundColor: boxColor } : undefined}
+        onClick={() => setEditing(true)}
+        onContextMenu={(e) => { e.preventDefault(); setPicker({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY }); }}
+      >
+        <div className="text-green-600">{buffer.label}</div>
+        <div className="font-semibold">{formatCurrency(buffer.amount)}</div>
+      </div>
+      {picker && (
+        <ColorPicker boxId={colorBoxId} x={picker.x} y={picker.y} onClose={() => setPicker(null)} />
+      )}
     </div>
   );
 }
@@ -917,7 +1004,7 @@ function FlowchartToolbar() {
         </span>
       )}
       <span className="text-[10px] text-gray-400 ml-auto">
-        Alt+click to draw arrows &middot; Drag to reposition &middot; Click to edit
+        Alt+click to draw arrows &middot; Drag to reposition &middot; Click to edit &middot; Right-click to color
       </span>
     </div>
   );
@@ -935,6 +1022,7 @@ export function LoanFlowchart() {
   const removeArrow = useFlowchartStore((s) => s.removeArrow);
   const drawingArrowFrom = useFlowchartStore((s) => s.drawingArrowFrom);
   const cancelDrawingArrow = useFlowchartStore((s) => s.cancelDrawingArrow);
+  const undo = useFlowchartStore((s) => s.undo);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedArrowId, setSelectedArrowId] = useState<string | null>(null);
@@ -1074,10 +1162,15 @@ export function LoanFlowchart() {
         removeArrow(selectedArrowId);
         setSelectedArrowId(null);
       }
+      if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return;
+        e.preventDefault();
+        undo();
+      }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [drawingArrowFrom, cancelDrawingArrow, selectedArrowId, removeArrow]);
+  }, [drawingArrowFrom, cancelDrawingArrow, selectedArrowId, removeArrow, undo]);
 
   // ── Mouse tracking for arrow drawing preview ──
 
@@ -1215,6 +1308,7 @@ export function LoanFlowchart() {
                           <ArrowTarget arrowId={`loan-${loan.id}`}>
                             <EditableLoanBox
                               loan={loan}
+                              colorBoxId={`loan-${loan.id}`}
                               purposeLabel={purposeProp ? `purpose → ${purposeProp.nickname}` : undefined}
                               refiFromLabel={refiFromLabels.length > 0 ? refiFromLabels.join(' + ') : undefined}
                             />
@@ -1239,6 +1333,7 @@ export function LoanFlowchart() {
                               <EditableLoanBox
                                 loan={loan}
                                 ghost
+                                colorBoxId={`ghost-${loan.id}`}
                                 purposeLabel={`interest → ${property.nickname} (secured: ${securityProp?.nickname ?? '?'})`}
                               />
                             </ArrowTarget>
@@ -1246,23 +1341,24 @@ export function LoanFlowchart() {
                         );
                       })}
 
-                      {/* Purchase breakdown group — visual wrapper only (no DraggableBox to avoid nesting) */}
+                      {/* Purchase breakdown group */}
                       {purchase ? (
-                        <PurchaseWrapper totalCost={purchase.totalCost} propertyId={property.id}>
-                          {purchase.items.map((item, i) => (
-                            <DraggableBox key={`pi-${property.id}-${i}`} boxId={`pi-${property.id}-${i}`}>
-                              <ArrowTarget arrowId={`pi-${property.id}-${i}`}>
+                        <DraggableBox boxId={`group-${property.id}-${pid}`}>
+                          <PurchaseWrapper totalCost={purchase.totalCost} propertyId={property.id}>
+                            {purchase.items.map((item, i) => (
+                              <ArrowTarget key={`pi-${property.id}-${i}`} arrowId={`pi-${property.id}-${i}`}>
                                 <EditablePurchaseItem
                                   item={item}
                                   propertyId={property.id}
                                   itemIndex={i}
+                                  colorBoxId={`pi-${property.id}-${i}`}
                                 />
                               </ArrowTarget>
-                            </DraggableBox>
-                          ))}
-                          {loanBoxes}
-                          <AddPurchaseItemButton propertyId={property.id} />
-                        </PurchaseWrapper>
+                            ))}
+                            {loanBoxes}
+                            <AddPurchaseItemButton propertyId={property.id} />
+                          </PurchaseWrapper>
+                        </DraggableBox>
                       ) : (
                         <>
                           {loanBoxes}
@@ -1280,6 +1376,7 @@ export function LoanFlowchart() {
                             <EditableBuffer
                               buffer={purchase.buffer}
                               propertyId={property.id}
+                              colorBoxId={`buffer-${property.id}`}
                             />
                           </ArrowTarget>
                         </DraggableBox>

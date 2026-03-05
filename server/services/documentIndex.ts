@@ -70,9 +70,17 @@ const CATEGORY_MAP: Record<string, string> = {
 
 // Known account numbers to search for in filenames
 const KNOWN_ACCOUNTS = [
-  '5599', '5604', '5612', '5573', '5581', '5620', '5638', '5911', '5929', '6189',
-  '13605113', '13605125', '13634421',
-  '120068179', '718701068', '007913338',
+  // Bankwest short accounts
+  '5599', '5604', '5612', '5573', '5581', '5620', '5638', '5911', '5929', '6189', '0202',
+  // Bankwest reference numbers
+  '13605113', '13605125', '13605122', '13634421',
+  // Beyond Bank
+  '120068179',
+  // NAB
+  '718701068', '13460',
+  // Macquarie — short and long forms
+  '007913338', '007913288', '007913296',
+  '3338', '3288', '3296', '8590', '01098590', '2338', '5168',
 ];
 
 let cachedIndex: IndexedDocument[] | null = null;

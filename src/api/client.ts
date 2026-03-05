@@ -74,6 +74,16 @@ export const api = {
       const res = await fetch(`${API_BASE}/documents/search?q=${encodeURIComponent(query)}`);
       return res.json();
     },
+
+    rename: async (relativePath: string, newFilename: string): Promise<{ success: boolean; newRelativePath: string; newFilename: string }> => {
+      const res = await fetch(`${API_BASE}/documents/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ relativePath, newFilename }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
   },
 
   upload: {

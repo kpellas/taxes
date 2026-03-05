@@ -13,7 +13,8 @@ interface DocumentLinksProps {
 
 export function DocumentLinks({ propertyId, accountNumbers, lenderKeywords, category }: DocumentLinksProps) {
   const documentIndex = useEvidenceStore((s) => s.documentIndex);
-  const [previewDoc, setPreviewDoc] = useState<{ url: string; filename: string } | null>(null);
+  const setDocumentIndex = useEvidenceStore((s) => s.setDocumentIndex);
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; filename: string; relativePath?: string } | null>(null);
 
   // Find matching documents
   const matches = documentIndex.filter((doc) => {
@@ -54,6 +55,7 @@ export function DocumentLinks({ propertyId, accountNumbers, lenderKeywords, cate
             onClick={() => setPreviewDoc({
               url: api.documents.getServeUrl(doc.relativePath),
               filename: doc.filename,
+              relativePath: doc.relativePath,
             })}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-50 text-gray-600 rounded text-xs hover:bg-gray-100 transition-colors border border-gray-200 cursor-pointer"
             title={doc.relativePath}
@@ -68,7 +70,12 @@ export function DocumentLinks({ propertyId, accountNumbers, lenderKeywords, cate
         <DocumentPreviewModal
           url={previewDoc.url}
           filename={previewDoc.filename}
+          relativePath={previewDoc.relativePath}
           onClose={() => setPreviewDoc(null)}
+          onRenamed={(newFilename, newRelativePath) => {
+            setPreviewDoc({ ...previewDoc, filename: newFilename, relativePath: newRelativePath, url: api.documents.getServeUrl(newRelativePath) });
+            api.documents.getIndex().then((data) => setDocumentIndex(data.documents)).catch(() => {});
+          }}
         />
       )}
     </>
