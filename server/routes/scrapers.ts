@@ -2,17 +2,83 @@ import { Router, Request, Response } from 'express';
 import { runPythonScraper, getScraperStatus, getAllScraperStatuses, updateScraperStatus, appendScraperOutput } from '../services/scraperRunner.js';
 import { scrapeAllBankwest } from '../services/bankwestScraper.js';
 import db from '../db.js';
+import fs from 'fs';
+import path from 'path';
 
 const router = Router();
+
+const SCRAPERS_DIR = path.resolve(import.meta.dirname, '../../scrapers');
 
 // GET /api/scrapers/status — status of all scrapers
 router.get('/status', (_req: Request, res: Response) => {
   res.json({ scrapers: getAllScraperStatuses() });
 });
 
+/**
+ * Scan a scraper's downloads folder and extract dates from filenames.
+ * Returns { count, oldest, latest } based on YYYY.MM.DD prefix in filenames.
+ */
+function scanDownloads(scraper: string): { count: number; oldest: string | null; latest: string | null } {
+  const downloadsDir = path.join(SCRAPERS_DIR, 'downloads');
+  if (!fs.existsSync(downloadsDir)) return { count: 0, oldest: null, latest: null };
+
+  const dates: string[] = [];
+  let count = 0;
+
+  if (scraper === 'macquarie') {
+    const dirs = fs.readdirSync(downloadsDir).filter(d => d.startsWith('macquarie_')).sort().reverse();
+    for (const dir of dirs) {
+      const stmtDir = path.join(downloadsDir, dir, 'statements');
+      if (!fs.existsSync(stmtDir)) continue;
+      for (const f of fs.readdirSync(stmtDir).filter(f => f.endsWith('.pdf'))) {
+        count++;
+        const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
+        if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+      }
+      break; // only latest run
+    }
+  } else if (scraper === 'bankaustralia') {
+    const dirs = fs.readdirSync(downloadsDir).filter(d => d.startsWith('bankaustralia_')).sort().reverse();
+    for (const dir of dirs) {
+      const stmtDir = path.join(downloadsDir, dir, 'statements');
+      if (!fs.existsSync(stmtDir)) continue;
+      for (const f of fs.readdirSync(stmtDir).filter(f => f.endsWith('.pdf'))) {
+        count++;
+        const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
+        if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+      }
+      break;
+    }
+  } else if (scraper === 'propertyme') {
+    // downloads/YYYY-MM-DD/documents/PropertyName/*.pdf
+    const dirs = fs.readdirSync(downloadsDir).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
+    for (const dir of dirs) {
+      const docsDir = path.join(downloadsDir, dir, 'documents');
+      if (!fs.existsSync(docsDir)) continue;
+      for (const prop of fs.readdirSync(docsDir, { withFileTypes: true }).filter(d => d.isDirectory())) {
+        for (const f of fs.readdirSync(path.join(docsDir, prop.name)).filter(f => f.endsWith('.pdf'))) {
+          count++;
+          const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
+          if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+        }
+      }
+      break;
+    }
+  } else if (scraper === 'bankwest') {
+    // Bankwest downloads go directly to PROPERTIES, check index instead
+    return { count: 0, oldest: null, latest: null };
+  }
+
+  dates.sort();
+  return {
+    count,
+    oldest: dates[0] || null,
+    latest: dates[dates.length - 1] || null,
+  };
+}
+
 // GET /api/scrapers/summary — document counts and latest dates per scraper source
 router.get('/summary', (_req: Request, res: Response) => {
-  // Match by provider name OR by file path containing the source folder
   const scraperQueries: Record<string, { providers: string[]; pathPatterns: string[] }> = {
     bankwest: { providers: ['Bankwest'], pathPatterns: ['%/Bankwest/%', '%Bankwest%statement%'] },
     macquarie: { providers: ['Macquarie'], pathPatterns: ['%/Macquarie/%'] },
@@ -20,7 +86,10 @@ router.get('/summary', (_req: Request, res: Response) => {
     bankaustralia: { providers: ['Bank Australia'], pathPatterns: ['%/Bank Australia/%'] },
   };
 
-  const summary: Record<string, { totalDocs: number; latestDate: string | null; oldestDate: string | null }> = {};
+  const summary: Record<string, {
+    totalDocs: number; latestDate: string | null; oldestDate: string | null;
+    downloaded: number; downloadedLatest: string | null; downloadedOldest: string | null;
+  }> = {};
 
   for (const [scraper, { providers, pathPatterns }] of Object.entries(scraperQueries)) {
     const providerPlaceholders = providers.map(() => 'provider = ?').join(' OR ');
@@ -36,10 +105,15 @@ router.get('/summary', (_req: Request, res: Response) => {
       WHERE ${where}
     `).get(...params) as { total: number; latest: string | null; oldest: string | null } | undefined;
 
+    const dl = scanDownloads(scraper);
+
     summary[scraper] = {
       totalDocs: row?.total || 0,
       latestDate: row?.latest || null,
       oldestDate: row?.oldest || null,
+      downloaded: dl.count,
+      downloadedLatest: dl.latest,
+      downloadedOldest: dl.oldest,
     };
   }
 

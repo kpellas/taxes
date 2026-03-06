@@ -549,6 +549,9 @@ export interface ScraperSummary {
   totalDocs: number;
   latestDate: string | null;
   oldestDate: string | null;
+  downloaded: number;
+  downloadedLatest: string | null;
+  downloadedOldest: string | null;
 }
 
 export interface ScraperStatus {

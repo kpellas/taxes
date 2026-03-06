@@ -100,14 +100,26 @@ export function BankFeedsPage() {
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">{s.desc}</p>
 
-                    {/* Current index summary */}
-                    {sm && sm.totalDocs > 0 && !isRunning && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        {sm.totalDocs} document{sm.totalDocs === 1 ? '' : 's'} indexed
-                        {sm.oldestDate && sm.latestDate && (
-                          <span> · {formatDate(sm.oldestDate)} to {formatDate(sm.latestDate)}</span>
+                    {/* Current status summary */}
+                    {sm && !isRunning && (sm.downloaded > 0 || sm.totalDocs > 0) && (
+                      <div className="text-xs text-gray-400 mt-1 space-y-0.5">
+                        {sm.downloaded > 0 && (
+                          <p>
+                            {sm.downloaded} statement{sm.downloaded === 1 ? '' : 's'} downloaded
+                            {sm.downloadedOldest && sm.downloadedLatest && (
+                              <span> · {formatDate(sm.downloadedOldest)} to {formatDate(sm.downloadedLatest)}</span>
+                            )}
+                          </p>
                         )}
-                      </p>
+                        {sm.totalDocs > 0 && (
+                          <p>
+                            {sm.totalDocs} in document index
+                            {sm.oldestDate && sm.latestDate && (
+                              <span> · {formatDate(sm.oldestDate)} to {formatDate(sm.latestDate)}</span>
+                            )}
+                          </p>
+                        )}
+                      </div>
                     )}
 
                     {/* Status line */}
