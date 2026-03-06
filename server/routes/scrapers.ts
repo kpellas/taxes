@@ -14,14 +14,23 @@ router.get('/status', (_req: Request, res: Response) => {
   res.json({ scrapers: getAllScraperStatuses() });
 });
 
-/** Extract YYYY-MM-DD dates from filenames with YYYY.MM.DD prefix */
+/** Extract YYYY-MM-DD dates from PDF filenames. Handles two formats:
+ *  - YYYY.MM.DD at start (standard format)
+ *  - _YYYY-MM-DD at end (old Bankwest format: bankwest_..._2025-10-08.pdf)
+ */
 function extractDatesFromPdfs(dir: string): { count: number; dates: string[] } {
   const dates: string[] = [];
   let count = 0;
   for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.pdf'))) {
     count++;
     const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
-    if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+    if (m) {
+      dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+    } else {
+      // Fallback: date with hyphens anywhere in filename (e.g. bankwest_..._2025-10-08.pdf)
+      const m2 = f.match(/(\d{4})-(\d{2})-(\d{2})\.pdf$/);
+      if (m2) dates.push(`${m2[1]}-${m2[2]}-${m2[3]}`);
+    }
   }
   return { count, dates };
 }
