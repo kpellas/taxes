@@ -80,8 +80,9 @@ function getDocsForLoan(
   const acctMatchesForProp = acctMatches.filter(d => d.propertyId === docPropertyId);
   const acctToUse = acctMatchesForProp.length > 0 ? acctMatchesForProp : acctMatches;
   for (const doc of acctToUse) {
-    // When using docs from a different property, filter by amount if available
-    if (doc.propertyId !== docPropertyId && doc.propertyId !== securityPropertyId) {
+    // When doc has a dollar amount in filename, skip if it doesn't match this loan's amount
+    // (catches shared account numbers across draws with different amounts)
+    if (doc.propertyId !== docPropertyId) {
       const amtMatch = doc.filename.match(/\$([0-9][0-9,_.]+)/);
       if (amtMatch && loan.originalAmount) {
         const docAmt = parseFloat(amtMatch[1].replace(/[,_]/g, ''));
@@ -706,11 +707,16 @@ export function LoansPage() {
                     return (
                       <React.Fragment key={loan.id}>
                         <tr
-                          className={`border-b border-gray-50 hover:bg-gray-100 cursor-pointer ${lastPreviewedLoanId === loan.id ? 'bg-blue-50 ring-2 ring-inset ring-blue-300' : isActive ? '' : 'bg-black/[0.03]'}`}
-                          onClick={() => { setEditingId(loan.id); setAddingNew(false); }}
+                          className={`border-b border-gray-50 hover:bg-gray-100 select-text ${lastPreviewedLoanId === loan.id ? 'bg-blue-50 ring-2 ring-inset ring-blue-300' : isActive ? '' : 'bg-black/[0.03]'}`}
                         >
-                          <td className="px-2 py-3 text-center font-mono text-[10px] text-gray-400">
-                            {idx + 1}
+                          <td className="px-2 py-3 text-center">
+                            <button
+                              onClick={() => { setEditingId(loan.id); setAddingNew(false); }}
+                              className="font-mono text-[10px] text-gray-400 hover:text-blue-600 hover:underline cursor-pointer"
+                              title="Edit loan"
+                            >
+                              {idx + 1}
+                            </button>
                           </td>
                           <td className="px-5 py-3 font-mono text-xs whitespace-nowrap">
                             {loan.startDate ?? '—'}

@@ -21,6 +21,24 @@ export async function extractPdfText(filePath: string): Promise<string> {
   }
 }
 
+const TEXT_EXTENSIONS = new Set(['.txt', '.csv', '.md', '.json', '.xml', '.htm', '.html', '.eml']);
+
+export async function extractFileText(filePath: string): Promise<string> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.pdf') {
+    return extractPdfText(filePath);
+  }
+  if (TEXT_EXTENSIONS.has(ext)) {
+    try {
+      const text = fs.readFileSync(filePath, 'utf-8');
+      return text.slice(0, 10000);
+    } catch {
+      return `[Could not read ${path.basename(filePath)}]`;
+    }
+  }
+  return `[Unsupported file type: ${ext}]`;
+}
+
 export function buildSystemPrompt(portfolioContext?: string): string {
   return `You are a property portfolio assistant embedded in Kelly and Mark Pellas's financial dashboard. You have access to ALL the data the user sees in the app — properties, loans, entities, tax returns (FY2019-20 through FY2023-24), line items, and more. This data is provided below.
 

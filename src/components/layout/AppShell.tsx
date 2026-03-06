@@ -9,6 +9,9 @@ import { TaxReviewPage } from '../tax/TaxReviewPage';
 import { EvidencePage } from '../evidence/EvidencePage';
 import { ExpensesPage } from '../expenses/ExpensesPage';
 import { EmailInboxPage } from '../email/EmailInboxPage';
+import { ResearchPage } from '../research/ResearchPage';
+import { BankFeedsPage } from '../banking/BankFeedsPage';
+import { DocumentIndexPage } from '../documents/DocumentIndexPage';
 import { ChatPanel } from '../chat/ChatPanel';
 import { useUIStore } from '../../store/uiStore';
 
@@ -26,6 +29,9 @@ function PageContent() {
     case 'evidence': return <EvidencePage />;
     case 'expenses': return <ExpensesPage />;
     case 'email': return <EmailInboxPage />;
+    case 'research': return <ResearchPage />;
+    case 'documents': return <DocumentIndexPage />;
+    case 'bank-feeds': return <BankFeedsPage />;
     default: return <DashboardPage />;
   }
 }

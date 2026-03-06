@@ -53,9 +53,10 @@ interface EvidenceItem {
 
 interface EvidenceTabProps {
   searchQuery: string;
+  propertyFilter?: string | null;
 }
 
-export function EvidenceTab({ searchQuery }: EvidenceTabProps) {
+export function EvidenceTab({ searchQuery, propertyFilter }: EvidenceTabProps) {
   const { properties, loans, propertyDocuments } = usePortfolioStore();
   const attachments = useEvidenceStore((s) => s.attachments);
   const documentIndex = useEvidenceStore((s) => s.documentIndex);
@@ -66,7 +67,10 @@ export function EvidenceTab({ searchQuery }: EvidenceTabProps) {
   // Build evidence items
   const items: EvidenceItem[] = [];
 
-  for (const p of properties) {
+  const filteredProperties = propertyFilter ? properties.filter(p => p.id === propertyFilter) : properties;
+  const filteredLoans = propertyFilter ? loans.filter(l => l.propertyId === propertyFilter) : loans;
+
+  for (const p of filteredProperties) {
     items.push({
       id: `prop-${p.id}`,
       property: p.nickname,
@@ -80,7 +84,7 @@ export function EvidenceTab({ searchQuery }: EvidenceTabProps) {
     });
   }
 
-  for (const l of loans) {
+  for (const l of filteredLoans) {
     const prop = properties.find(p => p.id === l.propertyId);
     const lenderName = l.lender.toLowerCase();
     const lenderKeywords = [lenderName, lenderName.replace(/\s+/g, '')];

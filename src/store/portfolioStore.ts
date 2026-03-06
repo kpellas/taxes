@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Entity, Property, Loan, TaxDocument, TaxActionItem, TimelineEvent, PropertyDocument, SourceInfo, PurchaseBreakdown, PurchaseItem } from '../types';
-import { entities as seedEntities, properties as seedProperties, loans as seedLoans, taxDocuments as seedDocs, taxActionItems as seedActions, timelineEvents as seedTimeline, propertyDocuments as seedPropDocs, purchaseBreakdowns as seedPurchaseBreakdowns } from '../data/seed';
 import { portfolioApi } from '../api/portfolio';
 
 interface PortfolioState {
@@ -41,35 +40,43 @@ interface PortfolioState {
 
 export const usePortfolioStore = create<PortfolioState>()(
   (set, get) => ({
-    // Start with seed data so the UI renders immediately, then overwrite from server
-    entities: seedEntities,
-    properties: seedProperties,
-    loans: seedLoans,
-    taxDocuments: seedDocs,
-    actionItems: seedActions,
-    timelineEvents: seedTimeline,
-    propertyDocuments: seedPropDocs,
-    purchaseBreakdowns: seedPurchaseBreakdowns,
+    // All data lives in SQLite — loaded via /api/portfolio/snapshot
+    entities: [],
+    properties: [],
+    loans: [],
+    taxDocuments: [],
+    actionItems: [],
+    timelineEvents: [],
+    propertyDocuments: [],
+    purchaseBreakdowns: [],
     _loaded: false,
 
     loadFromServer: async () => {
-      try {
-        const data = await portfolioApi.loadSnapshot();
-        set({
-          entities: data.entities,
-          properties: data.properties,
-          loans: data.loans,
-          taxDocuments: data.taxDocuments,
-          actionItems: data.actionItems,
-          timelineEvents: data.timelineEvents,
-          propertyDocuments: data.propertyDocuments,
-          purchaseBreakdowns: data.purchaseBreakdowns,
-          _loaded: true,
-        });
-        return { flowchart: data.flowchart };
-      } catch (err) {
-        console.error('Failed to load from server, using seed data:', err);
-        set({ _loaded: true });
+      // Retry up to 10 times if server isn't ready (e.g. during dev restart)
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          const data = await portfolioApi.loadSnapshot();
+          set({
+            entities: data.entities,
+            properties: data.properties,
+            loans: data.loans,
+            taxDocuments: data.taxDocuments,
+            actionItems: data.actionItems,
+            timelineEvents: data.timelineEvents,
+            propertyDocuments: data.propertyDocuments,
+            purchaseBreakdowns: data.purchaseBreakdowns,
+            _loaded: true,
+          });
+          return { flowchart: data.flowchart };
+        } catch (err) {
+          if (attempt < 9) {
+            console.warn(`Server not ready (attempt ${attempt + 1}/10), retrying in 1s...`);
+            await new Promise(r => setTimeout(r, 1000));
+          } else {
+            console.error('Failed to load from server after 10 attempts. UI will be empty until server is available.');
+            set({ _loaded: true });
+          }
+        }
       }
     },
 

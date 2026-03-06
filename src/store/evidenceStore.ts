@@ -24,11 +24,13 @@ interface EvidenceState {
   attachments: Record<string, EvidenceAttachment[]>;
   documentIndex: IndexedDocument[];
   documentIndexLoaded: boolean;
+  customHeaders: Record<string, string>; // maps default header name → custom name
 
   addNote: (evidenceItemId: string, text: string) => void;
   removeNote: (evidenceItemId: string, noteId: string) => void;
   addAttachment: (evidenceItemId: string, attachment: Omit<EvidenceAttachment, 'id'>) => void;
   setDocumentIndex: (docs: IndexedDocument[]) => void;
+  renameHeader: (defaultName: string, customName: string) => void;
 }
 
 export const useEvidenceStore = create<EvidenceState>()(
@@ -38,6 +40,7 @@ export const useEvidenceStore = create<EvidenceState>()(
       attachments: {},
       documentIndex: [],
       documentIndexLoaded: false,
+      customHeaders: {},
 
       addNote: (evidenceItemId, text) =>
         set((state) => {
@@ -76,12 +79,21 @@ export const useEvidenceStore = create<EvidenceState>()(
 
       setDocumentIndex: (docs) =>
         set({ documentIndex: docs, documentIndexLoaded: true }),
+
+      renameHeader: (defaultName, customName) =>
+        set((state) => ({
+          customHeaders: {
+            ...state.customHeaders,
+            [defaultName]: customName.trim() || defaultName,
+          },
+        })),
     }),
     {
       name: 'evidence-store',
       partialize: (state) => ({
         notes: state.notes,
         attachments: state.attachments,
+        customHeaders: state.customHeaders,
         // Don't persist documentIndex — it's loaded from server each session
       }),
     }

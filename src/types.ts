@@ -48,8 +48,17 @@ export interface Property {
   ownership: Owner[];
   ownershipNeedsConfirmation?: boolean;
   postcode?: string;
+  development?: string;
+  propertyType?: string;
+  council?: string;
+  lot?: string;
+  lotSize?: string;
+  projectedRent?: number;
+  projectedValue?: number;
   purchaseDate?: string;
   purchasePrice?: number;
+  deposit?: number;
+  stampDuty?: number;
   landCost?: number;
   buildCost?: number;
   currentValue?: number;
@@ -91,6 +100,14 @@ export interface Loan {
   purposePropertyId?: string;
   startDate?: string;
   endDate?: string;
+  closedDate?: string;
+  valuation?: number;
+  lvr?: number;
+  lmi?: number;
+  loanFees?: number;
+  broker?: string;
+  offsetAccount?: string;
+  security?: string;
   refinancedFromId?: string;
   refinancedToId?: string;
   needsConfirmation?: boolean;
@@ -186,7 +203,7 @@ export interface PortfolioMetrics {
   netYield: number;
 }
 
-export type Page = 'dashboard' | 'entities' | 'properties' | 'property-detail' | 'loans' | 'tax' | 'tax-review' | 'evidence' | 'expenses' | 'email';
+export type Page = 'dashboard' | 'entities' | 'properties' | 'property-detail' | 'loans' | 'tax' | 'tax-review' | 'evidence' | 'expenses' | 'email' | 'research' | 'bank-feeds' | 'documents';
 
 // ── Flowchart types ──
 
@@ -218,7 +235,7 @@ export interface FlowchartArrow {
 }
 
 // Document checklist — event-based model
-export type PropertyEventType = 'purchase' | 'construction' | 'refinance' | 'new_tenant' | 'new_pm' | 'insurance_renewal' | 'sale' | 'annual';
+export type PropertyEventType = 'due_diligence' | 'purchase' | 'construction' | 'refinance' | 'new_tenant' | 'new_pm' | 'insurance_renewal' | 'sale' | 'annual';
 
 // Tax Review — audit previous returns
 export interface TaxReturn {

@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import { buildSystemPrompt, extractPdfText } from '../services/claudeContext.js';
+import fs from 'fs';
+import { buildSystemPrompt, extractFileText } from '../services/claudeContext.js';
 import { buildDocumentIndex } from '../services/documentIndex.js';
+import { loadEmailLog } from '../services/emailIngestion.js';
 import path from 'path';
 
 const router = Router();
@@ -43,27 +45,64 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     // Build context with optional document text
     let extraContext = '';
+    const propertiesPath = process.env.PROPERTIES_PATH || '';
+    const uploadsPath = process.env.UPLOADS_PATH || path.resolve(import.meta.dirname, '../../uploads');
 
+    // Resolve document paths from PROPERTIES or uploads folders
     if (documentPaths && documentPaths.length > 0) {
-      const propertiesPath = process.env.PROPERTIES_PATH || '';
-      for (const docPath of documentPaths.slice(0, 3)) { // Max 3 docs
-        const fullPath = path.resolve(propertiesPath, docPath);
-        if (fullPath.startsWith(propertiesPath)) {
-          const ext = path.extname(docPath).toLowerCase();
-          if (ext === '.pdf') {
-            const text = await extractPdfText(fullPath);
-            extraContext += `\n\n--- Document: ${path.basename(docPath)} ---\n${text}`;
-          }
+      for (const docPath of documentPaths.slice(0, 5)) { // Max 5 docs
+        // Try PROPERTIES folder first, then uploads
+        let fullPath = path.resolve(propertiesPath, docPath);
+        if (!fullPath.startsWith(propertiesPath) || !fs.existsSync(fullPath)) {
+          fullPath = path.resolve(uploadsPath, docPath);
+          if (!fullPath.startsWith(uploadsPath) || !fs.existsSync(fullPath)) continue;
         }
+        const text = await extractFileText(fullPath);
+        extraContext += `\n\n--- Document: ${path.basename(docPath)} ---\n${text}`;
       }
     }
 
     if (propertyId) {
-      const propertiesPath = process.env.PROPERTIES_PATH || '';
       const docs = buildDocumentIndex(propertiesPath)
         .filter(d => d.propertyId === propertyId)
         .slice(0, 20);
       extraContext += `\n\nAvailable documents for ${propertyId}:\n${docs.map(d => `- ${d.filename} (${d.category})`).join('\n')}`;
+    }
+
+    // Search email log for relevant emails when the message mentions emails/attachments
+    const msgLower = message.toLowerCase();
+    if (msgLower.includes('email') || msgLower.includes('attachment') || msgLower.includes('inbox')) {
+      const emails = loadEmailLog();
+      const relevant = emails.filter(e => {
+        // Match by property if scoped
+        if (propertyId && e.propertyId !== propertyId) return false;
+        // Search subject + body for keywords from the user's message
+        const words = message.split(/\s+/).filter(w => w.length > 3).map(w => w.toLowerCase());
+        const emailText = `${e.subject} ${e.bodyPreview} ${e.from}`.toLowerCase();
+        return words.some(w => emailText.includes(w));
+      }).slice(0, 10);
+
+      if (relevant.length > 0) {
+        extraContext += '\n\n--- RELEVANT EMAILS ---\n';
+        for (const e of relevant) {
+          extraContext += `\nFrom: ${e.fromName} <${e.from}>\nDate: ${e.date}\nSubject: ${e.subject}\nProperty: ${e.propertyId || 'unmatched'}\n`;
+          if (e.bodyText) extraContext += `Body:\n${e.bodyText.slice(0, 2000)}\n`;
+          if (e.attachments.length > 0) {
+            extraContext += `Attachments: ${e.attachments.map(a => `${a.filename} (${a.savedPath})`).join(', ')}\n`;
+            // Auto-read PDF/text attachments
+            for (const att of e.attachments.slice(0, 3)) {
+              const attPath = path.resolve(uploadsPath, att.savedPath);
+              if (fs.existsSync(attPath)) {
+                const text = await extractFileText(attPath);
+                if (!text.startsWith('[Unsupported')) {
+                  extraContext += `\n--- Attachment: ${att.filename} ---\n${text}\n`;
+                }
+              }
+            }
+          }
+          extraContext += '---\n';
+        }
+      }
     }
 
     // Include store snapshot as structured data

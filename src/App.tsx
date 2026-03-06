@@ -6,16 +6,23 @@ import { useFlowchartStore } from './store/flowchartStore';
 function App() {
   const loadPortfolio = usePortfolioStore((s) => s.loadFromServer);
   const loadFlowchart = useFlowchartStore((s) => s.loadFromServer);
+  const loaded = usePortfolioStore((s) => s._loaded);
 
   useEffect(() => {
     loadPortfolio().then((result) => {
       if (result?.flowchart) {
         loadFlowchart(result.flowchart as Parameters<typeof loadFlowchart>[0]);
       }
-    }).catch(() => {
-      console.warn('API not available, using seed data');
     });
   }, [loadPortfolio, loadFlowchart]);
+
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-sm text-gray-400">Loading portfolio data...</p>
+      </div>
+    );
+  }
 
   return <AppShell />;
 }

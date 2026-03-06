@@ -1,4 +1,4 @@
-import { X, Download, FileText, Pencil, Check } from 'lucide-react';
+import { X, Download, FileText, Pencil, AlertTriangle } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -118,11 +118,25 @@ export function DocumentPreviewModal({ url, filename, relativePath, onClose, onR
         {/* Content */}
         <div className="flex-1 overflow-auto p-1 min-h-0">
           {isPdf && (
-            <iframe
-              src={url}
+            <object
+              data={`${url}#toolbar=1&navpanes=0`}
+              type="application/pdf"
               className="w-full h-[78vh] rounded border-0"
-              title={filename}
-            />
+            >
+              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                <AlertTriangle size={32} className="mb-3 text-gray-300" />
+                <p className="text-sm font-medium text-gray-600 mb-1">PDF could not be displayed</p>
+                <p className="text-xs mb-4">The file may have been moved, renamed, or is not accessible.</p>
+                <a
+                  href={url}
+                  download={filename}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                >
+                  <Download size={14} />
+                  Download Instead
+                </a>
+              </div>
+            </object>
           )}
           {isImage && (
             <div className="flex items-center justify-center p-4">

@@ -13,6 +13,7 @@ export interface IndexedDocument {
   dateFromFilename: string | null;
   sizeBytes: number;
   lastModified: string;
+  fileCreated: string;
   accountNumbers: string[];
 }
 
@@ -204,6 +205,7 @@ function walkDir(dir: string, basePath: string): IndexedDocument[] {
         dateFromFilename: extractDateFromFilename(entry.name),
         sizeBytes: stat.size,
         lastModified: stat.mtime.toISOString(),
+        fileCreated: stat.birthtime.toISOString(),
         accountNumbers: extractAccountNumbers(relativePath),
       });
     }

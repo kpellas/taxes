@@ -13,5 +13,15 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    watch: {
+      ignored: [
+        '**/scrapers/**',
+        '**/data/**',
+        '**/server/**',
+        '**/*.db',
+        '**/*.db-wal',
+        '**/*.db-shm',
+      ],
+    },
   },
 })

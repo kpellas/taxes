@@ -8,13 +8,13 @@ import { chatRouter } from './routes/chat.js';
 import { emailRouter } from './routes/email.js';
 import { authRouter, ensureAdminExists } from './routes/auth.js';
 import { portfolioRouter } from './routes/portfolio.js';
+import { googleRouter } from './routes/google.js';
+import { bankwestRouter } from './routes/bankwest.js';
+import { scrapersRouter } from './routes/scrapers.js';
 import { startEmailPoller } from './services/emailIngestion.js';
-import { seedIfEmpty } from './seed-db.js';
-
+import { seedDocumentTemplates } from './services/documentTemplates.js';
+import { syncFileIndex } from './services/documentIndexSync.js';
 dotenv.config({ path: path.resolve(import.meta.dirname, '../.env') });
-
-// Initialize database with seed data if empty
-seedIfEmpty();
 ensureAdminExists();
 
 const app = express();
@@ -30,6 +30,9 @@ app.use('/api/documents', documentsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/email', emailRouter);
+app.use('/api/google', googleRouter);
+app.use('/api/bankwest', bankwestRouter);
+app.use('/api/scrapers', scrapersRouter);
 
 // Serve static frontend build in production
 const distPath = path.resolve(import.meta.dirname, '../dist');
@@ -56,6 +59,14 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`API server running on http://localhost:${PORT}`);
   console.log(`Properties path: ${process.env.PROPERTIES_PATH || 'not set'}`);
   console.log(`API key configured: ${!!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-api-key-here')}`);
+
+  // Seed document templates and sync file index on startup
+  seedDocumentTemplates();
+  const propertiesPath = process.env.PROPERTIES_PATH;
+  if (propertiesPath) {
+    const result = syncFileIndex(propertiesPath);
+    console.log(`Document index: ${result.added} added, ${result.updated} updated, ${result.total} total`);
+  }
 
   // Start email poller (5 min interval) — gracefully skips if IMAP not configured
   startEmailPoller(5 * 60 * 1000);

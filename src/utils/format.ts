@@ -19,7 +19,12 @@ export function formatCurrencyFull(amount: number): string {
 
 export function formatDate(dateStr: string): string {
   if (!dateStr) return '';
-  if (dateStr.length <= 7) return dateStr; // e.g., "2024-10"
+  if (dateStr.length <= 7) {
+    // "2024-10" → "Oct 2024"
+    const [y, m] = dateStr.split('-');
+    const d = new Date(Number(y), Number(m) - 1);
+    return d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' });
+  }
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Building2, Landmark, ArrowLeftRight, Receipt, FileText, ShieldCheck, ChevronDown, ChevronLeft, ChevronRight, Filter, Search, Mail } from 'lucide-react';
+import { LayoutDashboard, Building2, Landmark, ArrowLeftRight, Receipt, FileText, ShieldCheck, ChevronDown, ChevronLeft, ChevronRight, Filter, Search, Mail, Globe, Download, FolderOpen } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { usePortfolioStore } from '../../store/portfolioStore';
 import type { Page } from '../../types';
@@ -11,8 +11,11 @@ const navItems: { page: Page; label: string; icon: typeof LayoutDashboard }[] = 
   { page: 'expenses', label: 'Registers', icon: Receipt },
   { page: 'tax', label: 'Tax Prep', icon: FileText },
   { page: 'tax-review', label: 'Tax Review', icon: Search },
-  { page: 'evidence', label: 'Evidence', icon: ShieldCheck },
+  { page: 'documents', label: 'Documents', icon: FolderOpen },
+  { page: 'evidence', label: 'Full History', icon: ShieldCheck },
   { page: 'email', label: 'Email Inbox', icon: Mail },
+  { page: 'research', label: 'Research', icon: Globe },
+  { page: 'bank-feeds', label: 'Scrapers', icon: Download },
 ];
 
 export function Sidebar() {

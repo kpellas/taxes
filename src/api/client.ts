@@ -57,6 +57,108 @@ export interface IngestedEmailDetail extends IngestedEmailSummary {
   bodyText: string;
 }
 
+export interface GmailResult {
+  id: string;
+  threadId: string;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  snippet: string;
+  hasAttachments: boolean;
+}
+
+export interface GmailDetail extends GmailResult {
+  bodyText: string;
+  attachments: { id: string; filename: string; mimeType: string; size: number }[];
+}
+
+export interface DriveResult {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  size: number | null;
+  webViewLink: string;
+}
+
+export interface ResearchTurn {
+  id: string;
+  sessionId: string;
+  query: string;
+  answer: string | null;
+  searchQueries: string[];
+  gmailResults: GmailResult[];
+  driveResults: DriveResult[];
+  totalFetched: number;
+  createdAt?: string;
+}
+
+export interface SavedFinding {
+  id: string;
+  source: 'gmail' | 'drive' | 'manual';
+  sourceId?: string;
+  title: string;
+  snippet?: string;
+  content?: string;
+  date?: string;
+  from?: string;
+  propertyId?: string | null;
+  entityId?: string | null;
+  loanId?: string | null;
+  tags?: string[];
+  saved_at?: string;
+}
+
+// ── Global Document Index types ──
+
+export interface GlobalDocument {
+  id: string;
+  canonical_name: string;
+  category: string;
+  provider: string | null;
+  doc_date: string | null;
+  source_type: string;
+  source_ref: string | null;
+  file_path: string | null;
+  property_id: string | null;
+  purpose_property_id: string | null;  // JSON array: [{"propertyId":"x","portion":100}] or legacy single id
+  entity_id: string | null;
+  loan_id: string | null;
+  metadata: string;
+  verified: number;
+  file_created_at: string | null;
+  added_via: string;          // existing, scraper, manual, ai
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentTemplate {
+  id: string;
+  event_type: string;
+  name: string;
+  category: string;
+  description: string | null;
+  required: number;
+  match_hints: string;
+  applies_to: string;
+}
+
+export interface GapResultItem {
+  template: DocumentTemplate;
+  matched: number;
+  matchedDocs: GlobalDocument[];
+  missing: boolean;
+}
+
+export interface GapAnalysis {
+  propertyId: string;
+  eventType: string;
+  results: GapResultItem[];
+  totalRequired: number;
+  totalMissing: number;
+}
+
 export const api = {
   documents: {
     getIndex: async (propertyId?: string): Promise<{ documents: IndexedDocument[]; total: number }> => {
@@ -82,6 +184,114 @@ export const api = {
         body: JSON.stringify({ relativePath, newFilename }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
+  },
+
+  // ── Global Document Index ──
+  globalIndex: {
+    getAll: async (propertyId?: string): Promise<{ documents: GlobalDocument[]; total: number }> => {
+      const url = propertyId
+        ? `${API_BASE}/documents/global?property=${propertyId}`
+        : `${API_BASE}/documents/global`;
+      const res = await fetch(url);
+      return res.json();
+    },
+
+    add: async (doc: {
+      canonical_name: string;
+      category: string;
+      provider?: string;
+      doc_date?: string;
+      source_type: string;
+      source_ref?: string;
+      file_path?: string;
+      property_id?: string;
+      entity_id?: string;
+      loan_id?: string;
+      metadata?: Record<string, unknown>;
+      links?: { link_type: string; link_id: string }[];
+    }): Promise<{ id: string; success: boolean }> => {
+      const res = await fetch(`${API_BASE}/documents/global`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(doc),
+      });
+      return res.json();
+    },
+
+    remove: async (id: string): Promise<void> => {
+      await fetch(`${API_BASE}/documents/global/${id}`, { method: 'DELETE' });
+    },
+
+    addLink: async (docId: string, linkType: string, linkId: string): Promise<void> => {
+      await fetch(`${API_BASE}/documents/global/${docId}/link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_type: linkType, link_id: linkId }),
+      });
+    },
+
+    updateField: async (docId: string, field: string, value: string | null): Promise<void> => {
+      await fetch(`${API_BASE}/documents/global/${docId}/field`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, value }),
+      });
+    },
+
+    setVerified: async (docId: string, verified: number): Promise<void> => {
+      await fetch(`${API_BASE}/documents/global/${docId}/verified`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verified }),
+      });
+    },
+
+    updateProperties: async (docId: string, propertyId: string | null, purposePropertyId: string | null): Promise<void> => {
+      await fetch(`${API_BASE}/documents/global/${docId}/properties`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_id: propertyId, purpose_property_id: purposePropertyId }),
+      });
+    },
+
+    sync: async (): Promise<{ added: number; updated: number; total: number }> => {
+      const res = await fetch(`${API_BASE}/documents/global/sync`, { method: 'POST' });
+      return res.json();
+    },
+
+    gaps: async (
+      propertyId: string,
+      eventType: string,
+      context?: { lenderFrom?: string; lenderTo?: string; loanId?: string; isHL?: boolean }
+    ): Promise<GapAnalysis> => {
+      const params = new URLSearchParams({ property: propertyId, event: eventType });
+      if (context?.lenderFrom) params.set('lenderFrom', context.lenderFrom);
+      if (context?.lenderTo) params.set('lenderTo', context.lenderTo);
+      if (context?.loanId) params.set('loanId', context.loanId);
+      if (context?.isHL) params.set('isHL', 'true');
+      const res = await fetch(`${API_BASE}/documents/gaps?${params}`);
+      return res.json();
+    },
+
+    gapsBatch: async (
+      propertyId: string,
+      events: { eventType: string; lenderFrom?: string; lenderTo?: string; loanId?: string; isHL?: boolean; purchaseLenders?: string[]; accountNumbers?: string[]; dateFrom?: string; dateTo?: string }[]
+    ): Promise<{ propertyId: string; results: Record<string, { template: DocumentTemplate; matched: GlobalDocument[]; missing: boolean }[]> }> => {
+      const res = await fetch(`${API_BASE}/documents/gaps/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ propertyId, events }),
+      });
+      return res.json();
+    },
+
+    getTemplates: async (eventType?: string): Promise<{ templates: DocumentTemplate[] }> => {
+      const url = eventType
+        ? `${API_BASE}/documents/templates/${eventType}`
+        : `${API_BASE}/documents/templates`;
+      const res = await fetch(url);
       return res.json();
     },
   },
@@ -189,8 +399,167 @@ export const api = {
     },
   },
 
+  google: {
+    status: async (): Promise<{ configured: boolean; connected: boolean }> => {
+      const res = await fetch(`${API_BASE}/google/status`);
+      return res.json();
+    },
+
+    getAuthUrl: async (): Promise<{ url: string }> => {
+      const res = await fetch(`${API_BASE}/google/auth`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
+
+    disconnect: async (): Promise<void> => {
+      await fetch(`${API_BASE}/google/disconnect`, { method: 'POST' });
+    },
+
+    searchGmail: async (q: string, pageToken?: string): Promise<{
+      results: GmailResult[];
+      nextPageToken: string | null;
+      total: number;
+    }> => {
+      const params = new URLSearchParams({ q });
+      if (pageToken) params.set('pageToken', pageToken);
+      const res = await fetch(`${API_BASE}/google/gmail/search?${params}`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
+
+    getGmailMessage: async (id: string): Promise<GmailDetail> => {
+      const res = await fetch(`${API_BASE}/google/gmail/${id}`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
+
+    getAttachmentUrl: (messageId: string, attachmentId: string, filename: string, mimeType: string): string =>
+      `${API_BASE}/google/gmail/${messageId}/attachment/${attachmentId}?filename=${encodeURIComponent(filename)}&mimeType=${encodeURIComponent(mimeType)}`,
+
+    searchDrive: async (q: string, pageToken?: string): Promise<{
+      results: DriveResult[];
+      nextPageToken: string | null;
+    }> => {
+      const params = new URLSearchParams({ q });
+      if (pageToken) params.set('pageToken', pageToken);
+      const res = await fetch(`${API_BASE}/google/drive/search?${params}`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
+
+    getFindings: async (): Promise<{ findings: SavedFinding[] }> => {
+      const res = await fetch(`${API_BASE}/google/findings`);
+      return res.json();
+    },
+
+    saveFinding: async (finding: SavedFinding): Promise<void> => {
+      await fetch(`${API_BASE}/google/findings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finding),
+      });
+    },
+
+    updateFinding: async (id: string, updates: Partial<SavedFinding>): Promise<void> => {
+      await fetch(`${API_BASE}/google/findings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+    },
+
+    deleteFinding: async (id: string): Promise<void> => {
+      await fetch(`${API_BASE}/google/findings/${id}`, { method: 'DELETE' });
+    },
+
+    smartSearch: async (query: string, history?: { query: string; answer: string | null }[]): Promise<{
+      results: GmailResult[];
+      driveResults?: DriveResult[];
+      searchQueries: string[];
+      reasoning: string;
+      answer?: string | null;
+      totalFetched: number;
+      totalRelevant: number;
+    }> => {
+      const res = await fetch(`${API_BASE}/google/smart-search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, history }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      return res.json();
+    },
+
+    // Research sessions
+    getSessions: async (): Promise<{ sessions: { id: string; title: string; created_at: string; updated_at: string }[] }> => {
+      const res = await fetch(`${API_BASE}/google/research/sessions`);
+      return res.json();
+    },
+    createSession: async (id: string, title?: string): Promise<void> => {
+      await fetch(`${API_BASE}/google/research/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, title }),
+      });
+    },
+    deleteSession: async (id: string): Promise<void> => {
+      await fetch(`${API_BASE}/google/research/sessions/${id}`, { method: 'DELETE' });
+    },
+    getSessionTurns: async (sessionId: string): Promise<{ turns: ResearchTurn[] }> => {
+      const res = await fetch(`${API_BASE}/google/research/sessions/${sessionId}/turns`);
+      return res.json();
+    },
+    saveSessionTurn: async (sessionId: string, turn: ResearchTurn): Promise<void> => {
+      await fetch(`${API_BASE}/google/research/sessions/${sessionId}/turns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(turn),
+      });
+    },
+  },
+
+  scrapers: {
+    status: async (): Promise<{ scrapers: ScraperStatus[] }> => {
+      const res = await fetch(`${API_BASE}/scrapers/status`);
+      return res.json();
+    },
+
+    summary: async (): Promise<{ summary: Record<string, ScraperSummary> }> => {
+      const res = await fetch(`${API_BASE}/scrapers/summary`);
+      return res.json();
+    },
+
+    run: async (scraper: string, options?: Record<string, unknown>): Promise<{ status: string; message?: string }> => {
+      const res = await fetch(`${API_BASE}/scrapers/${scraper}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options || {}),
+      });
+      return res.json();
+    },
+  },
+
   health: async () => {
     const res = await fetch(`${API_BASE}/health`);
     return res.json();
   },
 };
+
+export interface ScraperSummary {
+  totalDocs: number;
+  latestDate: string | null;
+  oldestDate: string | null;
+}
+
+export interface ScraperStatus {
+  scraper: string;
+  status: 'idle' | 'running' | 'completed' | 'error';
+  startedAt?: string;
+  completedAt?: string;
+  pid?: number;
+  output: string[];
+  error?: string;
+  distributed?: number;
+  skipped?: number;
+  downloaded?: number;
+}
