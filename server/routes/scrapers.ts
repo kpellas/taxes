@@ -14,59 +14,71 @@ router.get('/status', (_req: Request, res: Response) => {
   res.json({ scrapers: getAllScraperStatuses() });
 });
 
+/** Extract YYYY-MM-DD dates from filenames with YYYY.MM.DD prefix */
+function extractDatesFromPdfs(dir: string): { count: number; dates: string[] } {
+  const dates: string[] = [];
+  let count = 0;
+  for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.pdf'))) {
+    count++;
+    const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
+    if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+  }
+  return { count, dates };
+}
+
 /**
- * Scan a scraper's downloads folder and extract dates from filenames.
- * Returns { count, oldest, latest } based on YYYY.MM.DD prefix in filenames.
+ * Scan a scraper's downloads folder for file counts and date ranges.
  */
 function scanDownloads(scraper: string): { count: number; oldest: string | null; latest: string | null } {
   const downloadsDir = path.join(SCRAPERS_DIR, 'downloads');
-  if (!fs.existsSync(downloadsDir)) return { count: 0, oldest: null, latest: null };
 
   const dates: string[] = [];
   let count = 0;
 
   if (scraper === 'macquarie') {
+    if (!fs.existsSync(downloadsDir)) return { count: 0, oldest: null, latest: null };
     const dirs = fs.readdirSync(downloadsDir).filter(d => d.startsWith('macquarie_')).sort().reverse();
     for (const dir of dirs) {
       const stmtDir = path.join(downloadsDir, dir, 'statements');
       if (!fs.existsSync(stmtDir)) continue;
-      for (const f of fs.readdirSync(stmtDir).filter(f => f.endsWith('.pdf'))) {
-        count++;
-        const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
-        if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
-      }
+      const r = extractDatesFromPdfs(stmtDir);
+      count = r.count;
+      dates.push(...r.dates);
       break; // only latest run
     }
   } else if (scraper === 'bankaustralia') {
+    if (!fs.existsSync(downloadsDir)) return { count: 0, oldest: null, latest: null };
     const dirs = fs.readdirSync(downloadsDir).filter(d => d.startsWith('bankaustralia_')).sort().reverse();
     for (const dir of dirs) {
       const stmtDir = path.join(downloadsDir, dir, 'statements');
       if (!fs.existsSync(stmtDir)) continue;
-      for (const f of fs.readdirSync(stmtDir).filter(f => f.endsWith('.pdf'))) {
-        count++;
-        const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
-        if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
-      }
+      const r = extractDatesFromPdfs(stmtDir);
+      count = r.count;
+      dates.push(...r.dates);
       break;
     }
   } else if (scraper === 'propertyme') {
-    // downloads/YYYY-MM-DD/documents/PropertyName/*.pdf
+    if (!fs.existsSync(downloadsDir)) return { count: 0, oldest: null, latest: null };
+    // PropertyMe filenames aren't standardised — count files and use folder date as the scrape date
     const dirs = fs.readdirSync(downloadsDir).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
     for (const dir of dirs) {
       const docsDir = path.join(downloadsDir, dir, 'documents');
       if (!fs.existsSync(docsDir)) continue;
       for (const prop of fs.readdirSync(docsDir, { withFileTypes: true }).filter(d => d.isDirectory())) {
-        for (const f of fs.readdirSync(path.join(docsDir, prop.name)).filter(f => f.endsWith('.pdf'))) {
-          count++;
-          const m = f.match(/^(\d{4})\.(\d{2})\.(\d{2})/);
-          if (m) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
-        }
+        const pdfs = fs.readdirSync(path.join(docsDir, prop.name)).filter(f => f.endsWith('.pdf'));
+        count += pdfs.length;
       }
+      // Use the folder date as the "latest" date (when the scrape ran)
+      dates.push(dir);
       break;
     }
   } else if (scraper === 'bankwest') {
-    // Bankwest downloads go directly to PROPERTIES, check index instead
-    return { count: 0, oldest: null, latest: null };
+    // Bankwest stores downloads in data/bankwest-statements/
+    const bwDir = path.resolve(SCRAPERS_DIR, '../data/bankwest-statements');
+    if (!fs.existsSync(bwDir)) return { count: 0, oldest: null, latest: null };
+    const r = extractDatesFromPdfs(bwDir);
+    count = r.count;
+    dates.push(...r.dates);
   }
 
   dates.sort();

@@ -18,13 +18,15 @@ const PROPERTY_FOLDERS: Record<string, string> = {
   'Lennox':       '5 - LENNOX HEADS',
 };
 
-// Macquarie account labels → property name (for distribution)
+// Macquarie account name patterns → property name (for distribution)
+// Account names in filenames: "Main Spending (3460)", "Loan - Driftwood (2214)", "Schniggle", etc.
 const MACQUARIE_ACCOUNT_MAP: Record<string, string | null> = {
-  'Main_Spending_3460':    null,            // personal, goes to STATEMENTS/Macquarie
-  'Rental_Expenses_0535':  null,            // shared, goes to STATEMENTS/Macquarie
-  'Second_Savings_8707':   null,            // savings, goes to STATEMENTS/Macquarie
-  'Schniggle':             'Old Bar',       // Schniggle trust = Old Bar
-  'Loan_Old_Bar_2214':     'Old Bar',
+  'Main Spending':    null,            // personal, goes to STATEMENTS/Macquarie
+  'Rental Expenses':  null,            // shared, goes to STATEMENTS/Macquarie
+  'Second Savings':   null,            // savings, goes to STATEMENTS/Macquarie
+  'Schniggle':        'Old Bar',       // Schniggle trust = Old Bar
+  'Driftwood':        'Old Bar',       // Loan - Driftwood (2214) = Old Bar
+  '2214':             'Old Bar',       // fallback: match by account number
 };
 
 export interface ScraperStatus {
@@ -220,18 +222,17 @@ function distributeMacquarie(downloadsDir: string, propertiesPath: string, copie
 
       // Find property for this account
       let propertyName: string | null = null;
-      for (const [label, prop] of Object.entries(MACQUARIE_ACCOUNT_MAP)) {
-        const displayName = label.replace(/_/g, ' ').replace(/\s+\d+$/, '');
-        if (accountName.toLowerCase().includes(displayName.toLowerCase()) ||
-            accountName.toLowerCase().includes(label.toLowerCase())) {
+      const acctLower = accountName.toLowerCase();
+      for (const [pattern, prop] of Object.entries(MACQUARIE_ACCOUNT_MAP)) {
+        if (acctLower.includes(pattern.toLowerCase())) {
           propertyName = prop;
           break;
         }
       }
       // Also check for property names directly in account name
-      if (!propertyName) {
+      if (propertyName === null) {
         for (const [prop] of Object.entries(PROPERTY_FOLDERS)) {
-          if (accountName.toLowerCase().includes(prop.toLowerCase())) {
+          if (acctLower.includes(prop.toLowerCase())) {
             propertyName = prop;
             break;
           }
@@ -254,14 +255,21 @@ function distributeMacquarie(downloadsDir: string, propertiesPath: string, copie
   return copied;
 }
 
+// Map PropertyMe folder names (street addresses) → PROPERTY_FOLDERS keys
+const PROPERTYME_ADDRESS_MAP: Record<string, string> = {
+  '19 Goldring St, Chisholm':             'Chisholm',
+  '3 Bannerman Pl, South West Rocks':     'Bannerman',
+  '25 Driftwood Boulevard, Old Bar':      'Old Bar',
+  '27 Calmwater Crescent , Helensvale':   'Lennox',     // Helensvale may be miscategorised — adjust if needed
+  '2 Pathfinder Way, Coomera Waters':     'Heddon Greta', // adjust if this maps differently
+};
+
 /**
  * PropertyMe: downloads/YYYY-MM-DD/documents/PropertyName/*.pdf
- * Filename: YYYY.MM.DD - Property - PropertyMe - Doc Type.pdf
- * Distribution: extract property from filename, put in {property}/LEASING/ or {property}/
+ * Filenames are NOT standardised — use the folder name to identify the property.
  */
 function distributePropertyMe(downloadsDir: string, propertiesPath: string, copiedFiles: string[]): number {
   let copied = 0;
-  // Find date-stamped download folders (not prefixed with a scraper name)
   const dateDirs = fs.readdirSync(downloadsDir)
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort()
@@ -271,7 +279,6 @@ function distributePropertyMe(downloadsDir: string, propertiesPath: string, copi
     const docsDir = path.join(downloadsDir, dateDir, 'documents');
     if (!fs.existsSync(docsDir)) continue;
 
-    // Each subfolder is a property
     const propFolders = fs.readdirSync(docsDir, { withFileTypes: true })
       .filter(d => d.isDirectory());
 
@@ -279,17 +286,38 @@ function distributePropertyMe(downloadsDir: string, propertiesPath: string, copi
       const propDir = path.join(docsDir, propFolder.name);
       const pdfs = fs.readdirSync(propDir).filter(f => f.endsWith('.pdf'));
 
+      // Match property by folder name (street address)
+      let propertyKey: string | null = null;
+      const folderLower = propFolder.name.toLowerCase();
+      // Try exact match first
+      if (PROPERTYME_ADDRESS_MAP[propFolder.name]) {
+        propertyKey = PROPERTYME_ADDRESS_MAP[propFolder.name];
+      } else {
+        // Fuzzy: check if folder contains a known property name
+        for (const [addr, key] of Object.entries(PROPERTYME_ADDRESS_MAP)) {
+          if (folderLower.includes(key.toLowerCase()) || addr.toLowerCase().includes(folderLower)) {
+            propertyKey = key;
+            break;
+          }
+        }
+        // Last resort: check PROPERTY_FOLDERS keys
+        if (!propertyKey) {
+          for (const key of Object.keys(PROPERTY_FOLDERS)) {
+            if (folderLower.includes(key.toLowerCase())) {
+              propertyKey = key;
+              break;
+            }
+          }
+        }
+      }
+
+      const destFolder = propertyKey && PROPERTY_FOLDERS[propertyKey]
+        ? path.join(propertiesPath, PROPERTY_FOLDERS[propertyKey], 'PropertyMe')
+        : path.join(propertiesPath, 'PropertyMe');
+
+      fs.mkdirSync(destFolder, { recursive: true });
+
       for (const pdf of pdfs) {
-        // Extract property from filename: "YYYY.MM.DD - Property - PropertyMe - ..."
-        const match = pdf.match(/^\d{4}\.\d{2}\.\d{2} - (.+?) - PropertyMe/);
-        const propertyName = match?.[1] || '';
-
-        const destPropertyFolder = PROPERTY_FOLDERS[propertyName];
-        const destFolder = destPropertyFolder
-          ? path.join(propertiesPath, destPropertyFolder, 'PropertyMe')
-          : path.join(propertiesPath, 'PropertyMe');
-
-        fs.mkdirSync(destFolder, { recursive: true });
         const destPath = path.join(destFolder, pdf);
         if (!fs.existsSync(destPath)) {
           fs.copyFileSync(path.join(propDir, pdf), destPath);
