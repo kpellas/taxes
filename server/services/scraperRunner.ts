@@ -162,7 +162,7 @@ export function runPythonScraper(
  * After a scraper finishes, find its output files and copy them to PROPERTIES.
  * Then re-index and mark as 'scraper'.
  */
-function distributeScraperOutput(scraper: string): number {
+export function distributeScraperOutput(scraper: string): number {
   const propertiesPath = PROPERTIES_PATH();
   if (!fs.existsSync(propertiesPath)) return 0;
 

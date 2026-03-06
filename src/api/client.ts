@@ -529,6 +529,14 @@ export const api = {
       return res.json();
     },
 
+    distribute: async (scraper?: string): Promise<{ total: number; distributed: Record<string, number> }> => {
+      const url = scraper
+        ? `${API_BASE}/scrapers/${scraper}/distribute`
+        : `${API_BASE}/scrapers/distribute`;
+      const res = await fetch(url, { method: 'POST' });
+      return res.json();
+    },
+
     run: async (scraper: string, options?: Record<string, unknown>): Promise<{ status: string; message?: string }> => {
       const res = await fetch(`${API_BASE}/scrapers/${scraper}`, {
         method: 'POST',

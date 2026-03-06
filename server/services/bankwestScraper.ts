@@ -41,6 +41,7 @@ export interface ScrapeResult {
   accounts: BankwestAccount[];
   downloads: { account: string; file: string; date: string }[];
   errors: string[];
+  copied?: number;
 }
 
 function ensureDir(dir: string) {
@@ -288,9 +289,9 @@ export async function scrapeBankwest(options: {
     await downloadAllStatements(page, result, accountFilter);
 
     // Copy PDFs into PROPERTIES folder and re-index
-    const copied = distributeToProperties(result.downloads);
+    result.copied = distributeToProperties(result.downloads);
 
-    console.log(`[Bankwest] PAN ${pan}: ${result.downloads.length} downloads, ${copied} copied to PROPERTIES, ${result.errors.length} errors`);
+    console.log(`[Bankwest] PAN ${pan}: ${result.downloads.length} downloads, ${result.copied} copied to PROPERTIES, ${result.errors.length} errors`);
   } catch (err: any) {
     result.errors.push(`Fatal: ${err.message}`);
     console.error('[Bankwest] Fatal error:', err);

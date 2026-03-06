@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, CheckCircle2, AlertCircle, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, RefreshCw, ChevronDown, ChevronRight, FolderInput } from 'lucide-react';
 import { api } from '../../api/client';
 import type { ScraperStatus, ScraperSummary } from '../../api/client';
 import { formatDate } from '../../utils/format';
@@ -14,6 +14,7 @@ const SCRAPERS = [
 export function BankFeedsPage() {
   const [statuses, setStatuses] = useState<Record<string, ScraperStatus>>({});
   const [summaries, setSummaries] = useState<Record<string, ScraperSummary>>({});
+  const [distributing, setDistributing] = useState<string | null>(null);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -36,7 +37,7 @@ export function BankFeedsPage() {
       if (!anyRunning && pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
-        fetchSummary(); // refresh summary when all scrapers finish
+        fetchSummary();
       }
     } catch { /* ignore */ }
   }, [fetchSummary]);
@@ -47,7 +48,6 @@ export function BankFeedsPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchStatuses, fetchSummary]);
 
-  // Auto-scroll log
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [statuses, expandedLog]);
@@ -65,6 +65,18 @@ export function BankFeedsPage() {
       setTimeout(fetchStatuses, 500);
     } catch (err) {
       console.error(`Failed to start ${id}:`, err);
+    }
+  };
+
+  const distributeScraper = async (id: string) => {
+    setDistributing(id);
+    try {
+      await api.scrapers.distribute(id);
+      await fetchSummary();
+    } catch (err) {
+      console.error(`Failed to distribute ${id}:`, err);
+    } finally {
+      setDistributing(null);
     }
   };
 
@@ -87,6 +99,9 @@ export function BankFeedsPage() {
           const isError = st?.status === 'error';
           const isExpanded = expandedLog === s.id;
           const hasOutput = st && st.output.length > 0;
+          const isDistributing = distributing === s.id;
+          // Show index button when there are downloaded files not yet in the index
+          const hasUnindexed = sm && sm.downloaded > 0 && sm.downloaded > sm.totalDocs && s.id !== 'bankwest';
 
           return (
             <div key={s.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -111,14 +126,18 @@ export function BankFeedsPage() {
                             )}
                           </p>
                         )}
-                        {sm.totalDocs > 0 && (
-                          <p>
-                            {sm.totalDocs} in document index
-                            {sm.oldestDate && sm.latestDate && (
-                              <span> · {formatDate(sm.oldestDate)} to {formatDate(sm.latestDate)}</span>
-                            )}
-                          </p>
-                        )}
+                        <p>
+                          {sm.totalDocs > 0 ? (
+                            <>
+                              {sm.totalDocs} in document index
+                              {sm.oldestDate && sm.latestDate && (
+                                <span> · {formatDate(sm.oldestDate)} to {formatDate(sm.latestDate)}</span>
+                              )}
+                            </>
+                          ) : sm.downloaded > 0 ? (
+                            <span className="text-amber-500">Not yet indexed — click Index to file into PROPERTIES</span>
+                          ) : null}
+                        </p>
                       </div>
                     )}
 
@@ -158,6 +177,18 @@ export function BankFeedsPage() {
                       >
                         {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         Log
+                      </button>
+                    )}
+                    {hasUnindexed && !isRunning && (
+                      <button
+                        onClick={() => distributeScraper(s.id)}
+                        disabled={isDistributing}
+                        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {isDistributing
+                          ? <><Loader2 size={14} className="animate-spin" /> Indexing...</>
+                          : <><FolderInput size={14} /> Index</>
+                        }
                       </button>
                     )}
                     <button

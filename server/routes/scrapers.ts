@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { runPythonScraper, getScraperStatus, getAllScraperStatuses, updateScraperStatus, appendScraperOutput } from '../services/scraperRunner.js';
+import { runPythonScraper, getScraperStatus, getAllScraperStatuses, updateScraperStatus, appendScraperOutput, distributeScraperOutput } from '../services/scraperRunner.js';
 import { scrapeAllBankwest } from '../services/bankwestScraper.js';
 import db from '../db.js';
 import fs from 'fs';
@@ -120,6 +120,31 @@ router.get('/summary', (_req: Request, res: Response) => {
   res.json({ summary });
 });
 
+// POST /api/scrapers/distribute — distribute downloaded files to PROPERTIES and re-index
+router.post('/distribute', (_req: Request, res: Response) => {
+  const results: Record<string, number> = {};
+  for (const scraper of ['macquarie', 'propertyme', 'bankaustralia']) {
+    try {
+      results[scraper] = distributeScraperOutput(scraper);
+    } catch (err: any) {
+      results[scraper] = -1;
+    }
+  }
+  const total = Object.values(results).filter(n => n > 0).reduce((a, b) => a + b, 0);
+  res.json({ distributed: results, total });
+});
+
+// POST /api/scrapers/:scraper/distribute — distribute a single scraper's downloads
+router.post('/:scraper/distribute', (req: Request, res: Response) => {
+  const { scraper } = req.params;
+  try {
+    const count = distributeScraperOutput(scraper);
+    res.json({ scraper, distributed: count });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/scrapers/status/:scraper — status of a specific scraper
 router.get('/status/:scraper', (req: Request, res: Response) => {
   res.json(getScraperStatus(req.params.scraper));
@@ -212,10 +237,13 @@ router.post('/bankwest', async (req: Request, res: Response) => {
     const totalDownloads = results.reduce((n, r) => n + r.downloads.length, 0);
     const totalErrors = results.reduce((n, r) => n + r.errors.length, 0);
     appendScraperOutput('bankwest', `Done: ${totalDownloads} statements, ${totalErrors} errors`);
+    // Bankwest distributes internally via bankwestScraper.ts — count what was copied
+    const totalCopied = results.reduce((n, r) => n + (r.copied ?? 0), 0);
     updateScraperStatus('bankwest', {
       status: 'completed',
       completedAt: new Date().toISOString(),
       downloaded: totalDownloads,
+      distributed: totalCopied,
     });
   } catch (err: any) {
     updateScraperStatus('bankwest', {
