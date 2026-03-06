@@ -172,12 +172,13 @@ router.post('/macquarie', (req: Request, res: Response) => {
 
   try {
     const status = runPythonScraper('macquarie', args);
-    if (status.status === 'running' && status.startedAt !== new Date().toISOString().slice(0, 16)) {
-      // Already running from a previous call
-      res.json({ status: 'already_running', ...status });
-    } else {
-      res.json({ status: 'started', message: 'Macquarie scraper started — complete 2FA in the browser window', ...status });
-    }
+    // If output is non-empty, it was already running from a previous call
+    const wasAlreadyRunning = status.output.length > 0;
+    res.json({
+      status: wasAlreadyRunning ? 'already_running' : 'started',
+      message: wasAlreadyRunning ? undefined : 'Macquarie scraper started — complete 2FA in the browser window',
+      ...status,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

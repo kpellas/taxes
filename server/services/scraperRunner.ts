@@ -69,6 +69,30 @@ export function appendScraperOutput(scraper: string, line: string) {
 }
 
 /**
+ * Parse the download count from scraper stdout lines.
+ * Each Python scraper prints its count in a different format.
+ */
+function parseDownloadCount(scraper: string, output: string[]): number {
+  let total = 0;
+  for (const line of output) {
+    if (scraper === 'macquarie') {
+      // "    Result: 5 PDFs downloaded"
+      const m = line.match(/Result:\s*(\d+)\s*PDFs?\s*downloaded/i);
+      if (m) total += parseInt(m[1], 10);
+    } else if (scraper === 'propertyme') {
+      // "    Total: 12/15"
+      const m = line.match(/Total:\s*(\d+)\/\d+/);
+      if (m) total += parseInt(m[1], 10);
+    } else if (scraper === 'bankaustralia') {
+      // "  DONE — 60 downloaded, 0 already existed"
+      const m = line.match(/DONE\s*[—–-]\s*(\d+)\s*downloaded/i);
+      if (m) total += parseInt(m[1], 10);
+    }
+  }
+  return total;
+}
+
+/**
  * Run a Python scraper as a child process.
  * Returns immediately — check status via getScraperStatus().
  */
@@ -134,6 +158,10 @@ export function runPythonScraper(
     if (code === 0) {
       status.status = 'completed';
       console.log(`[Scraper] ${scraper} completed successfully`);
+
+      // Parse download count from scraper output
+      status.downloaded = parseDownloadCount(scraper, status.output);
+
       // Distribute files after successful scrape
       try {
         const n = distributeScraperOutput(scraper);
@@ -256,12 +284,12 @@ function distributeMacquarie(downloadsDir: string, propertiesPath: string, copie
 }
 
 // Map PropertyMe folder names (street addresses) → PROPERTY_FOLDERS keys
+// Only map addresses that are actually our investment properties
 const PROPERTYME_ADDRESS_MAP: Record<string, string> = {
   '19 Goldring St, Chisholm':             'Chisholm',
   '3 Bannerman Pl, South West Rocks':     'Bannerman',
   '25 Driftwood Boulevard, Old Bar':      'Old Bar',
-  '27 Calmwater Crescent , Helensvale':   'Lennox',     // Helensvale may be miscategorised — adjust if needed
-  '2 Pathfinder Way, Coomera Waters':     'Heddon Greta', // adjust if this maps differently
+  // Helensvale and Coomera Waters are other properties managed by the same agent — skip them
 };
 
 /**
