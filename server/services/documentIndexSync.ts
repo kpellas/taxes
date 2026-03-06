@@ -74,7 +74,168 @@ export function syncFileIndex(propertiesPath: string): { added: number; updated:
 
   insertOrUpdate();
 
+  // After sync, populate security/purpose mappings
+  populatePropertyMappings();
+
   return { added, updated, removed, total: fileIndex.length };
+}
+
+// ── Bankwest account number → loan mapping ──
+// Account number (short code from filename) → { security: propertyId, purpose: purposePropertyId }
+interface LoanMapping { security: string; purpose: string; }
+
+function buildLoanMappings(): Map<string, LoanMapping> {
+  const map = new Map<string, LoanMapping>();
+  const loans = db.prepare('SELECT id, property_id, data FROM loans').all() as
+    { id: string; property_id: string; data: string }[];
+
+  for (const loan of loans) {
+    try {
+      const d = JSON.parse(loan.data);
+      const acct = d.accountNumber as string;
+      if (!acct || acct === '—') continue;
+
+      const security = loan.property_id;
+      const purpose = (d.purposePropertyId as string) || security;
+
+      // Store by short code (last 4 digits) and full number
+      map.set(acct, { security, purpose });
+      if (acct.length > 4) {
+        const short = acct.slice(-4);
+        // Only set short code if not already claimed by another loan
+        if (!map.has(short)) map.set(short, { security, purpose });
+      }
+    } catch { /* skip */ }
+  }
+  return map;
+}
+
+// Macquarie account name patterns → property (same as scraperRunner)
+const MACQUARIE_PROPERTY_MAP: Record<string, string | null> = {
+  'main spending':    null,
+  'rental expenses':  null,
+  'second savings':   null,
+  'schniggle':        'old-bar',
+  'driftwood':        'old-bar',
+  'bannerman':        'bannerman',
+};
+
+/**
+ * Populate property_id (security) and purpose_property_id for all documents.
+ * Uses file path, account numbers in filenames, and loan mappings.
+ */
+export function populatePropertyMappings(): { updated: number } {
+  const loanMap = buildLoanMappings();
+  let updated = 0;
+
+  // Folder prefix → property_id (security)
+  const folderMap: Record<string, string> = {
+    '1 - chisholm': 'chisholm',
+    '2 - heddon greta': 'heddon-greta',
+    '3 - southwest rocks': 'bannerman',
+    '4 - old bar': 'old-bar',
+    '5 - lennox heads': 'lennox',
+  };
+
+  const docs = db.prepare('SELECT id, file_path, property_id, purpose_property_id, provider, canonical_name FROM document_index').all() as
+    { id: string; file_path: string | null; property_id: string | null; purpose_property_id: string | null; provider: string | null; canonical_name: string }[];
+
+  const update = db.prepare('UPDATE document_index SET property_id = ?, purpose_property_id = ? WHERE id = ?');
+
+  const batchUpdate = db.transaction(() => {
+    for (const doc of docs) {
+      const fp = doc.file_path || '';
+      const fpLower = fp.toLowerCase();
+      const filename = fp.split('/').pop() || '';
+
+      let security = doc.property_id || null;
+      let purpose = doc.purpose_property_id || null;
+
+      // ── Step 1: Derive security (property_id) from file path ──
+      if (!security) {
+        // Check property folder prefix
+        for (const [prefix, propId] of Object.entries(folderMap)) {
+          if (fpLower.startsWith(prefix)) {
+            security = propId;
+            break;
+          }
+        }
+      }
+
+      // Extract account number from filename for Bankwest statements
+      // Formats: "Loan Statement (5599)" or "bankwest_HeddonGreta-5573_..."
+      let acctMatch: string | null = null;
+      const parenMatch = filename.match(/\((\d{4})\)/);
+      if (parenMatch) acctMatch = parenMatch[1];
+      if (!acctMatch) {
+        const bwMatch = filename.match(/bankwest_\w+-(\d{4})_/);
+        if (bwMatch) acctMatch = bwMatch[1];
+      }
+
+      if (!security && acctMatch && loanMap.has(acctMatch)) {
+        security = loanMap.get(acctMatch)!.security;
+      }
+
+      // Macquarie statements: extract account name from "Macquarie - Account Name - type"
+      if (!security && (doc.provider === 'Macquarie' || fpLower.includes('macquarie'))) {
+        const macMatch = filename.match(/Macquarie - (.+?) -/i);
+        if (macMatch) {
+          const acctName = macMatch[1].toLowerCase();
+          for (const [pattern, propId] of Object.entries(MACQUARIE_PROPERTY_MAP)) {
+            if (acctName.includes(pattern)) {
+              if (propId) security = propId;
+              break;
+            }
+          }
+        }
+      }
+
+      // Bank Australia → no specific property (entity-level: M2K2)
+      // Leave security null for entity-level statements
+
+      // ── Step 2: Derive purpose_property_id ──
+      if (acctMatch && loanMap.has(acctMatch)) {
+        // Loan statement → purpose from loan mapping
+        purpose = loanMap.get(acctMatch)!.purpose;
+      } else if (security && !purpose) {
+        // Non-loan docs (leasing, purchase, insurance) → purpose = security
+        purpose = security;
+      }
+
+      // Macquarie purpose: same logic
+      if (!purpose && (doc.provider === 'Macquarie' || fpLower.includes('macquarie'))) {
+        const macMatch = filename.match(/Macquarie - (.+?) -/i);
+        if (macMatch) {
+          const acctName = macMatch[1].toLowerCase();
+          // Check if this matches a loan account for purpose
+          for (const [acct, mapping] of loanMap.entries()) {
+            if (acctName.includes(acct.toLowerCase())) {
+              purpose = mapping.purpose;
+              break;
+            }
+          }
+          // Fallback to property name matching
+          if (!purpose) {
+            for (const [pattern, propId] of Object.entries(MACQUARIE_PROPERTY_MAP)) {
+              if (acctName.includes(pattern) && propId) {
+                purpose = propId;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // Only update if something changed
+      if (security !== doc.property_id || purpose !== doc.purpose_property_id) {
+        update.run(security, purpose, doc.id);
+        updated++;
+      }
+    }
+  });
+
+  batchUpdate();
+  return { updated };
 }
 
 /**
